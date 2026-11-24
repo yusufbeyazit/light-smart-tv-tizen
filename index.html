@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Light Smart TV</title>
+    <link rel="stylesheet" href="css/app.css">
+    <!-- Samsung Tizen WebAPIs (present automatically on Samsung Smart TVs) -->
+    <script type="text/javascript" src="$WEBAPIS/webapis/webapis.js"></script>
+</head>
+<body>
+    <div id="tv-stage">
+        <!-- 1. HARDWARE VIDEO LAYER (AVPlay on Tizen 3.0 / HTML5 Video on PC Preview) -->
+        <div id="video-layer">
+            <object id="av-player" type="application/avplayer"></object>
+            <video id="html5-video" autoplay playsinline></video>
+            <div id="ambient-bg">
+                <div class="ambient-glow ambient-glow-1"></div>
+                <div class="ambient-glow ambient-glow-2"></div>
+                <div class="ambient-brand">
+                    <div class="brand-mark">L</div>
+                    <div class="brand-title">LIGHT <span>SMART TV</span></div>
+                    <div class="brand-sub" id="ambient-status">Canli TV hazirlaniyor...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. TOP HUD: STATUS PILL + NUMERIC ZAP + CLOCK -->
+        <div id="top-hud">
+            <div id="player-state-pill" class="hidden">
+                <span class="spinner-dot"></span>
+                <span id="player-state-text">Baglaniyor...</span>
+            </div>
+            <div class="top-right-group">
+                <div id="number-zap-hud" class="hidden">
+                    <div class="nz-label">KANAL</div>
+                    <div id="nz-digits" class="nz-digits">---</div>
+                </div>
+                <div id="top-info-pills" class="hud-hidden">
+                    <div id="top-account-badge">
+                        <span class="acct-dot" id="acct-dot"></span>
+                        <span id="acct-label">Misafir</span>
+                    </div>
+                    <div id="tv-clock">--:--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. FLOATING PLAYER OSD (BOTTOM LIVE BAR) -->
+        <div id="player-osd" class="overlay-hidden">
+            <div class="osd-gradient"></div>
+            <div class="osd-card">
+                <div class="osd-main-row">
+                    <div class="osd-logo-box" id="osd-logo-box">
+                        <span id="osd-logo-fallback">TV</span>
+                        <img id="osd-logo-img" alt="" class="hidden">
+                    </div>
+                    <div class="osd-meta">
+                        <div class="osd-title-line">
+                            <span class="osd-ch-num" id="osd-ch-num">001</span>
+                            <span class="osd-ch-name" id="osd-ch-name">Kanal Secilmedi</span>
+                            <span class="live-badge"><span class="live-dot"></span>CANLI</span>
+                            <span class="quality-badge" id="osd-quality-badge">FHD</span>
+                            <span class="fav-star-badge hidden" id="osd-fav-badge">★</span>
+                        </div>
+                        <div class="osd-epg-now" id="osd-epg-now">Yayin bilgisi bekleniyor</div>
+                        <div class="osd-progress-wrap">
+                            <div class="osd-progress-track">
+                                <div class="osd-progress-fill" id="osd-progress-fill"></div>
+                            </div>
+                            <span class="osd-epg-next" id="osd-epg-next"></span>
+                        </div>
+                    </div>
+                    <div class="osd-source-meta">
+                        <div class="osd-source-name" id="osd-source-name">Demo FTA</div>
+                        <div class="osd-stream-count" id="osd-stream-count">1 Yayin</div>
+                    </div>
+                </div>
+
+                <!-- Quick Action Pills (accessible with DOWN while OSD is visible) -->
+                <div class="osd-actions" id="osd-actions">
+                    <div class="osd-btn" data-action="seek_back"><span class="btn-ic">«</span> -5sn</div>
+                    <div class="osd-btn" data-action="seek_fwd"><span class="btn-ic">»</span> +5sn</div>
+                    <div class="osd-btn" data-action="seek_live"><span class="btn-ic">●</span> Canli</div>
+                    <div class="osd-btn" data-action="drawer"><span class="btn-ic">☰</span> Kanallar</div>
+                    <div class="osd-btn" data-action="streams"><span class="btn-ic">📡</span> Yayin</div>
+                    <div class="osd-btn" data-action="favorite"><span class="btn-ic">★</span> <span id="osd-fav-btn-txt">Favori</span></div>
+                    <div class="osd-btn" data-action="aspect"><span class="btn-ic">⤢</span> <span id="osd-aspect-txt">16:9</span></div>
+                    <div class="osd-btn" data-action="audio"><span class="btn-ic">♪</span> Ses</div>
+                    <div class="osd-btn osd-btn-accent" data-action="hub"><span class="btn-ic">◉</span> Nuvio</div>
+                </div>
+
+                <div class="osd-hints">
+                    <span><b>OK / SOL</b> Kanal Listesi</span>
+                    <span><b>SAG / FF</b> +5sn Ileri Sar</span>
+                    <span><b>RW</b> -5sn Geri Sar</span>
+                    <span><b>YUKARI</b> Favoriler</span>
+                    <span><i class="key-dot key-red"></i> Favori</span>
+                    <span><i class="key-dot key-green"></i> Yayin</span>
+                    <span><i class="key-dot key-yellow"></i> Ara</span>
+                    <span><i class="key-dot key-blue"></i> Nuvio</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3B. FLOATING SEEK HUD -->
+        <div id="seek-hud" class="seek-hidden">
+            <div class="seek-hud-delta" id="seek-hud-delta">» +5 sn</div>
+            <div class="seek-hud-time" id="seek-hud-time"></div>
+        </div>
+
+        <!-- 4. QUICK ACCESS DOCK (FAVORITES & RECENTS ONE-CLICK STRIP) -->
+        <div id="quick-dock" class="overlay-hidden">
+            <div class="dock-header">
+                <div class="dock-title">⚡ Hizli Erisim <span id="dock-subtitle">Favoriler &amp; Son Izlenenler</span></div>
+                <div class="dock-hint">SOL/SAG Sec · OK Izle · GERI Kapat</div>
+            </div>
+            <div id="dock-strip" class="dock-strip"></div>
+        </div>
+
+        <!-- 5. SLIDE-IN DUAL-PANE LIVE CHANNEL DRAWER -->
+        <div id="channel-drawer" class="drawer-hidden">
+            <div class="drawer-backdrop"></div>
+            <div class="drawer-panel">
+                <div class="drawer-top">
+                    <div class="drawer-brand">
+                        <span class="mini-mark">L</span>
+                        <div>
+                            <div class="drawer-app-name">LIGHT <span>SMART TV</span></div>
+                            <div class="drawer-stats" id="drawer-stats">0 kanal hazir</div>
+                        </div>
+                    </div>
+                    <div class="drawer-top-actions">
+                        <div class="drawer-pill-hint"><i class="key-dot key-red"></i> Favori</div>
+                        <div class="drawer-pill-hint"><i class="key-dot key-yellow"></i> Ara</div>
+                        <div class="drawer-pill-hint"><i class="key-dot key-blue"></i> Nuvio / Kaynak</div>
+                    </div>
+                </div>
+
+                <div class="drawer-body">
+                    <!-- Left Category Rail -->
+                    <div id="category-pane" class="drawer-pane">
+                        <div class="pane-header">KATEGORILER</div>
+                        <div id="category-list" class="vlist-viewport"></div>
+                    </div>
+                    <!-- Right Virtualized Channel List -->
+                    <div id="channel-pane" class="drawer-pane">
+                        <div class="pane-header">
+                            <span id="active-cat-title">Tum Kanallar</span>
+                            <span id="active-cat-count" class="pane-count">0</span>
+                        </div>
+                        <div id="channel-list" class="vlist-viewport"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. MULTI-STREAM SELECTOR OVERLAY -->
+        <div id="stream-modal" class="modal-hidden">
+            <div class="modal-card modal-compact">
+                <div class="modal-header">
+                    <div>
+                        <div class="modal-title" id="stream-modal-title">Yayin Kaynagi Sec</div>
+                        <div class="modal-sub" id="stream-modal-sub">Mevcut alternatif yayinlar</div>
+                    </div>
+                    <div class="modal-close-hint">GERI · Kapat</div>
+                </div>
+                <div id="stream-list" class="stream-list"></div>
+            </div>
+        </div>
+
+        <!-- 7. FAST CHANNEL SEARCH OVERLAY -->
+        <div id="search-modal" class="modal-hidden">
+            <div class="modal-card modal-wide">
+                <div class="modal-header">
+                    <div>
+                        <div class="modal-title">Hizli Kanal Ara</div>
+                        <div class="modal-sub">Turkce karakter uyumlu anlik arama (ornek: trt, spor, haber)</div>
+                    </div>
+                    <div class="modal-close-hint">GERI · Kapat</div>
+                </div>
+                <div class="search-layout">
+                    <div class="search-left">
+                        <input type="text" id="search-input" class="tv-input" placeholder="Kanal veya kategori yazin..." autocomplete="off">
+                        <div id="osk-grid" class="osk-grid"></div>
+                    </div>
+                    <div class="search-right">
+                        <div class="pane-header">
+                            <span>SONUCLAR</span>
+                            <span id="search-count" class="pane-count">0</span>
+                        </div>
+                        <div id="search-results" class="search-results-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 8. NUVIO ACCOUNT, QR LOGIN & SOURCE HUB MODAL -->
+        <div id="hub-modal" class="modal-hidden">
+            <div class="modal-card modal-hub">
+                <div class="modal-header">
+                    <div class="hub-brand-row">
+                        <span class="mini-mark">L</span>
+                        <div>
+                            <div class="modal-title">Light Smart TV · Nuvio &amp; Kaynaklar</div>
+                            <div class="modal-sub">Nuvio QR giris, bulut eklenti senkronizasyonu, M3U/EPG ve Xtream yonetimi</div>
+                        </div>
+                    </div>
+                    <div class="modal-close-hint">GERI · Yayina Don</div>
+                </div>
+
+                <!-- Hub Tabs -->
+                <div class="hub-tabs" id="hub-tabs">
+                    <div class="hub-tab active" data-tab="nuvio">◉ Nuvio QR &amp; Hesap</div>
+                    <div class="hub-tab" data-tab="addons">❖ Nuvio Eklentileri</div>
+                    <div class="hub-tab" data-tab="m3u">☰ M3U &amp; XMLTV EPG</div>
+                    <div class="hub-tab" data-tab="xtream">⚡ Xtream Codes</div>
+                    <div class="hub-tab" data-tab="settings">⚙ Ayarlar</div>
+                </div>
+
+                <!-- Tab Panels -->
+                <div class="hub-content">
+                    <!-- TAB 1: NUVIO QR & ACCOUNT -->
+                    <div class="hub-panel" id="tab-nuvio">
+                        <div class="two-col">
+                            <!-- Left: QR Login / Signed In Card -->
+                            <div class="hub-box" id="nuvio-qr-box">
+                                <div class="box-title">Nuvio QR Kod ile Hizli Giris</div>
+                                <div id="nuvio-signed-out-view">
+                                    <div class="qr-row">
+                                        <div class="qr-frame">
+                                            <canvas id="qr-canvas" width="240" height="240"></canvas>
+                                            <div id="qr-placeholder" class="qr-placeholder">QR kodu olusturmak icin<br>asagidaki butona basin</div>
+                                        </div>
+                                        <div class="qr-info">
+                                            <div class="qr-step">1. Telefonunuzdan <b>Nuvio</b> uygulamasini veya kamerayi acin</div>
+                                            <div class="qr-step">2. QR kodu okutun ya da kodu girin:</div>
+                                            <div id="qr-code-text" class="qr-code-pill">---- ----</div>
+                                            <div id="qr-status-text" class="qr-status">Hazir</div>
+                                            <div class="btn-row">
+                                                <button class="tv-btn tv-btn-primary hub-focusable" id="btn-start-qr">QR Kod Olustur</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="nuvio-signed-in-view" class="hidden">
+                                    <div class="account-card">
+                                        <div class="account-avatar" id="acct-avatar">N</div>
+                                        <div>
+                                            <div class="account-email" id="acct-email">kullanici@nuvio.tv</div>
+                                            <div class="account-meta" id="acct-sync-meta">Nuvio bulut oturumu aktif</div>
+                                        </div>
+                                    </div>
+                                    <div class="box-subtitle">Aktif Nuvio Profili</div>
+                                    <div id="profile-list" class="profile-row"></div>
+                                    <div class="btn-row">
+                                        <button class="tv-btn tv-btn-primary hub-focusable" id="btn-sync-now">Buluttan Eklentileri Senkronize Et</button>
+                                        <button class="tv-btn tv-btn-danger hub-focusable" id="btn-sign-out">Cikis Yap</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Right: Email/Password + Self-Host Backend Config -->
+                            <div class="hub-box">
+                                <div class="box-title">E-Posta ile Giris / Nuvio Sunucu Ayari</div>
+                                <div class="form-group">
+                                    <label>Nuvio Backend (Supabase) URL</label>
+                                    <input type="text" id="inp-backend-url" class="tv-input hub-focusable" placeholder="https://api.nuvio.tv veya self-host URL">
+                                </div>
+                                <div class="form-group">
+                                    <label>Supabase Anon / Publishable Key</label>
+                                    <input type="text" id="inp-backend-key" class="tv-input hub-focusable" placeholder="eyJ... (self-host veya ozel backend icin)">
+                                </div>
+                                <div class="btn-row">
+                                    <button class="tv-btn hub-focusable" id="btn-save-backend">Sunucuyu Kaydet</button>
+                                    <button class="tv-btn hub-focusable" id="btn-discover-backend">.well-known Kesfet</button>
+                                </div>
+                                <div class="form-divider"></div>
+                                <div class="form-row-2">
+                                    <div class="form-group">
+                                        <label>Nuvio E-Posta</label>
+                                        <input type="email" id="inp-login-email" class="tv-input hub-focusable" placeholder="ornek@mail.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Sifre</label>
+                                        <input type="password" id="inp-login-pass" class="tv-input hub-focusable" placeholder="••••••••">
+                                    </div>
+                                </div>
+                                <div class="btn-row">
+                                    <button class="tv-btn tv-btn-primary hub-focusable" id="btn-email-login">E-Posta ile Giris Yap</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: NUVIO ADDONS -->
+                    <div class="hub-panel hidden" id="tab-addons">
+                        <div class="two-col">
+                            <div class="hub-box">
+                                <div class="box-title">Yeni Nuvio / Stremio Canli TV Eklentisi Ekle</div>
+                                <div class="form-group">
+                                    <label>Eklenti Manifest URL (manifest.json)</label>
+                                    <input type="text" id="inp-addon-url" class="tv-input hub-focusable" placeholder="https://.../manifest.json">
+                                </div>
+                                <div class="form-group">
+                                    <label>Gorunen Ad (Istege Bagli)</label>
+                                    <input type="text" id="inp-addon-name" class="tv-input hub-focusable" placeholder="Ornek: Turkiye Canli TV">
+                                </div>
+                                <div class="btn-row">
+                                    <button class="tv-btn tv-btn-primary hub-focusable" id="btn-add-addon">Eklentiyi Ekle ve Yukle</button>
+                                    <button class="tv-btn hub-focusable" id="btn-reload-sources">Tum Kaynaklari Yenile</button>
+                                </div>
+                                <div class="help-note">Nuvio hesabinizla giris yaptiginizda, mobil veya web uygulamanizda ekli tum canli TV / IPTV eklentileri otomatik olarak buraya cekilir.</div>
+                            </div>
+                            <div class="hub-box">
+                                <div class="box-title">Yuklu Nuvio Eklentileri</div>
+                                <div id="addon-source-list" class="source-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 3: M3U & XMLTV EPG -->
+                    <div class="hub-panel hidden" id="tab-m3u">
+                        <div class="two-col">
+                            <div class="hub-box">
+                                <div class="box-title">M3U / M3U8 Oynatma Listesi Ekle</div>
+                                <div class="form-group">
+                                    <label>Liste Adi</label>
+                                    <input type="text" id="inp-m3u-name" class="tv-input hub-focusable" placeholder="Ornek: Ev IPTV">
+                                </div>
+                                <div class="form-group">
+                                    <label>M3U / M3U8 URL</label>
+                                    <input type="text" id="inp-m3u-url" class="tv-input hub-focusable" placeholder="http://.../playlist.m3u8">
+                                </div>
+                                <div class="form-group">
+                                    <label>XMLTV EPG URL (Istege Bagli)</label>
+                                    <input type="text" id="inp-m3u-epg" class="tv-input hub-focusable" placeholder="http://.../epg.xml">
+                                </div>
+                                <div class="btn-row">
+                                    <button class="tv-btn tv-btn-primary hub-focusable" id="btn-add-m3u">M3U Listesini Ekle</button>
+                                </div>
+                            </div>
+                            <div class="hub-box">
+                                <div class="box-title">Kayitli M3U Listeleri</div>
+                                <div id="m3u-source-list" class="source-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 4: XTREAM CODES -->
+                    <div class="hub-panel hidden" id="tab-xtream">
+                        <div class="two-col">
+                            <div class="hub-box">
+                                <div class="box-title">Xtream Codes Canli TV Hesabi Ekle</div>
+                                <div class="form-group">
+                                    <label>Kaynak Adi</label>
+                                    <input type="text" id="inp-xt-name" class="tv-input hub-focusable" placeholder="Ornek: Xtream Canli">
+                                </div>
+                                <div class="form-group">
+                                    <label>Sunucu URL (http://host:port)</label>
+                                    <input type="text" id="inp-xt-server" class="tv-input hub-focusable" placeholder="http://example.com:8080">
+                                </div>
+                                <div class="form-row-2">
+                                    <div class="form-group">
+                                        <label>Kullanici Adi</label>
+                                        <input type="text" id="inp-xt-user" class="tv-input hub-focusable" placeholder="kullanici">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Sifre</label>
+                                        <input type="password" id="inp-xt-pass" class="tv-input hub-focusable" placeholder="sifre">
+                                    </div>
+                                </div>
+                                <div class="btn-row">
+                                    <button class="tv-btn tv-btn-primary hub-focusable" id="btn-add-xtream">Dogrula ve Ekle</button>
+                                </div>
+                            </div>
+                            <div class="hub-box">
+                                <div class="box-title">Kayitli Xtream Kaynaklari</div>
+                                <div id="xtream-source-list" class="source-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 5: SETTINGS -->
+                    <div class="hub-panel hidden" id="tab-settings">
+                        <div class="two-col">
+                            <div class="hub-box">
+                                <div class="box-title">Oynatici ve Arayuz Tercihleri</div>
+                                <div class="setting-row hub-focusable" data-setting="autoPlayLast">
+                                    <div>
+                                        <div class="setting-name">Acilista Son Kanali Otomatik Baslat</div>
+                                        <div class="setting-desc">Uygulama acilir acilmaz kaldiginiz yayindan devam eder</div>
+                                    </div>
+                                    <div class="toggle-pill" id="tog-autoPlayLast">ACIK</div>
+                                </div>
+                                <div class="setting-row hub-focusable" data-setting="groupDuplicateStreams">
+                                    <div>
+                                        <div class="setting-name">Ayni Kanallari Tek Satirda Grupla</div>
+                                        <div class="setting-desc">Farkli kaynaklardaki ayni kanali "Yayin Sec" altinda birlestirir</div>
+                                    </div>
+                                    <div class="toggle-pill" id="tog-groupDuplicateStreams">ACIK</div>
+                                </div>
+                                <div class="setting-row hub-focusable" data-setting="showDemoWhenEmpty">
+                                    <div>
+                                        <div class="setting-name">Kaynak Yoksa Ucretsiz Demo Kanallari Goster</div>
+                                        <div class="setting-desc">TRT acik yayinlariyla aninda test imkani</div>
+                                    </div>
+                                    <div class="toggle-pill" id="tog-showDemoWhenEmpty">ACIK</div>
+                                </div>
+                                <div class="setting-row hub-focusable" data-setting="aspectMode">
+                                    <div>
+                                        <div class="setting-name">Varsayilan Goruntu Orani</div>
+                                        <div class="setting-desc">AVPlay donanim olcekleme modu</div>
+                                    </div>
+                                    <div class="toggle-pill" id="tog-aspectMode">16:9</div>
+                                </div>
+                            </div>
+                            <div class="hub-box">
+                                <div class="box-title">Samsung Tizen 3.0 Kumanda Kisayollari</div>
+                                <div class="shortcut-list">
+                                    <div class="sc-item"><span>OK / SOL</span><b>Kanal ve Kategori Cekmecesi</b></div>
+                                    <div class="sc-item"><span>YUKARI</span><b>Hizli Favori &amp; Son Kanallar Cubugu</b></div>
+                                    <div class="sc-item"><span>ASAGI / INFO</span><b>Canli Yayin Bilgi &amp; EPG Cubugu</b></div>
+                                    <div class="sc-item"><span>CH+ / CH-</span><b>Aninda Kanal Gecisi (Zapping)</b></div>
+                                    <div class="sc-item"><span>0 - 9 Rakamlar</span><b>Numara ile Direkt Kanala Git</b></div>
+                                    <div class="sc-item"><span>KIRMIZI (PC: F)</span><b>Favoriye Ekle / Cikar</b></div>
+                                    <div class="sc-item"><span>YESIL (PC: S)</span><b>Alternatif Yayin / Kalite Sec</b></div>
+                                    <div class="sc-item"><span>SARI (PC: Q)</span><b>Hizli Kanal Arama</b></div>
+                                    <div class="sc-item"><span>MAVI (PC: N)</span><b>Nuvio QR Hesap &amp; Kaynak Merkezi</b></div>
+                                </div>
+                                <div class="sys-foot" id="sys-foot-info">Light Smart TV v1.0.0 · github.com/yusufbeyazit</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 9. FLOATING TOAST -->
+        <div id="toast" class="toast-hidden"></div>
+    </div>
+
+    <!-- Strict ES5 Dependency-Ordered Script Bundle (Zero Framework Overhead) -->
+    <script type="text/javascript" src="js/polyfills.js"></script>
+    <script type="text/javascript" src="js/config.js"></script>
+    <script type="text/javascript" src="js/storage.js"></script>
+    <script type="text/javascript" src="js/http.js"></script>
+    <script type="text/javascript" src="js/qrcode-generator.js"></script>
+    <script type="text/javascript" src="js/qr.js"></script>
+    <script type="text/javascript" src="js/nuvio-auth.js"></script>
+    <script type="text/javascript" src="js/nuvio-sync.js"></script>
+    <script type="text/javascript" src="js/addon-client.js"></script>
+    <script type="text/javascript" src="js/m3u-parser.js"></script>
+    <script type="text/javascript" src="js/xtream-client.js"></script>
+    <script type="text/javascript" src="js/epg-engine.js"></script>
+    <script type="text/javascript" src="js/channel-store.js"></script>
+    <script type="text/javascript" src="js/player.js"></script>
+    <script type="text/javascript" src="js/virtual-list.js"></script>
+    <script type="text/javascript" src="js/remote.js"></script>
+    <script type="text/javascript" src="js/app.js"></script>
+</body>
+</html>
