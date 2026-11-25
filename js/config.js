@@ -27,9 +27,9 @@
         QR_POLL_INTERVAL_MS: 3000,
         QR_SESSION_TTL_SEC: 300,
         OSD_AUTO_HIDE_MS: 5200,
-        ZAP_DEBOUNCE_MS: 180,
-        NUMBER_ZAP_COMMIT_MS: 1400,
-        STREAM_RECONNECT_DELAY_MS: 3500,
+        ZAP_DEBOUNCE_MS: 110,
+        NUMBER_ZAP_COMMIT_MS: 1200,
+        STREAM_RECONNECT_DELAY_MS: 2500,
         STREAM_MAX_RETRIES: 3,
 
         // Tizen 3.0 AVPlay live-streaming tuning

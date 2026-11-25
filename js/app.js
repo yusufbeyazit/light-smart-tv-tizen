@@ -326,9 +326,9 @@
         }
     }
 
-    function playAndShowOsd(channel, streamIdx) {
+    function playAndShowOsd(channel, streamIdx, options) {
         if (!channel) return;
-        NL.player.playChannel(channel, streamIdx || 0);
+        NL.player.playChannel(channel, streamIdx || 0, options);
         showOsd(false);
     }
 
@@ -1119,10 +1119,10 @@
 
         switch (action) {
             case 'CH_UP':
-                playAndShowOsd(NL.store.getNeighborChannel(ch, ui.activeCatId, -1));
+                playAndShowOsd(NL.store.getNeighborChannel(ch, ui.activeCatId, -1), 0, { debounce: true });
                 break;
             case 'CH_DOWN':
-                playAndShowOsd(NL.store.getNeighborChannel(ch, ui.activeCatId, 1));
+                playAndShowOsd(NL.store.getNeighborChannel(ch, ui.activeCatId, 1), 0, { debounce: true });
                 break;
             case 'UP':
                 if (ui.osdVisible && ui.osdFocusActive) {
@@ -1638,12 +1638,26 @@
             if (ev === 'epg' && ui.mode === 'drawer') ui.chVList.render();
         });
 
-        // If user has an existing Nuvio session, silently refresh addons in background
+        // Fast-boot: launch cached sources & last channel immediately, sync Nuvio cloud in background!
+        var prevAddonsJson = JSON.stringify(NL.storage.get(NL.CONFIG.KEYS.NUVIO_ADDONS, []));
+        var hasCachedSources = (NL.store.getAllAddons().length + NL.store.getM3uSources().length + NL.store.getXtreamSources().length) > 0;
+
         if (NL.auth.isAuthenticated()) {
-            NL.sync.syncAll(function () {
-                updateTopAccountBadge();
+            if (hasCachedSources) {
                 reloadAllChannels(true);
-            });
+                NL.sync.syncAll(function () {
+                    updateTopAccountBadge();
+                    var nextAddonsJson = JSON.stringify(NL.storage.get(NL.CONFIG.KEYS.NUVIO_ADDONS, []));
+                    if (nextAddonsJson !== prevAddonsJson) {
+                        reloadAllChannels(false);
+                    }
+                });
+            } else {
+                NL.sync.syncAll(function () {
+                    updateTopAccountBadge();
+                    reloadAllChannels(true);
+                });
+            }
         } else {
             reloadAllChannels(true);
         }

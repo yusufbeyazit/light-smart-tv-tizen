@@ -174,8 +174,11 @@
         };
     }
 
-    // Resolve streams for an addon-backed channel across its owning addon + any compatible enabled addons
-    function resolveChannelStreams(channel, enabledAddons, callback) {
+    // Resolve streams for an addon-backed channel:
+    // - Fires onFirstStream(streams) IMMEDIATELY when the first valid stream arrives
+    // - Continues gathering backup streams in background for onDone(err, allStreams)
+    // - Returns { abort: fn } so rapid channel switching cancels stale XHRs
+    function resolveChannelStreams(channel, enabledAddons, callback, onFirstStream) {
         var targets = [];
         var seen = {};
 
@@ -198,17 +201,25 @@
         }
 
         if (targets.length === 0 || !channel.addonMetaId) {
-            return callback(null, channel.streams || []);
+            var existing = channel.streams || [];
+            if (onFirstStream && existing.length > 0) onFirstStream(existing);
+            if (callback) callback(null, existing);
+            return { abort: function () {} };
         }
 
         var collected = [];
+        var seenUrls = {};
+        var activeReqs = [];
         var remaining = targets.length;
+        var firstFired = false;
+        var aborted = false;
         var type = channel.addonType || 'tv';
         var metaId = channel.addonMetaId;
 
         function finishOne() {
+            if (aborted) return;
             remaining--;
-            if (remaining <= 0) {
+            if (remaining <= 0 && callback) {
                 callback(null, collected);
             }
         }
@@ -216,23 +227,45 @@
         for (var t = 0; t < targets.length; t++) {
             (function (manifestUrl) {
                 fetchManifest(manifestUrl, function (err, entry) {
+                    if (aborted) return;
                     if (err || !entry || !supportsStream(entry.manifest, type, metaId)) {
                         return finishOne();
                     }
                     var url = entry.baseUrl + '/stream/' + encodeURIComponent(type) + '/' + encodeURIComponent(metaId) + '.json';
-                    NL.http.getJson(url, {}, function (sErr, sData) {
+                    var req = NL.http.getJson(url, {}, function (sErr, sData) {
+                        if (aborted) return;
                         if (!sErr && sData && Array.isArray(sData.streams)) {
                             var aName = entry.manifest.name || 'Nuvio Eklenti';
+                            var addedAny = false;
                             for (var k = 0; k < sData.streams.length; k++) {
                                 var parsed = normalizeStreamObj(sData.streams[k], aName);
-                                if (parsed) collected.push(parsed);
+                                if (parsed && !seenUrls[parsed.url]) {
+                                    seenUrls[parsed.url] = true;
+                                    collected.push(parsed);
+                                    addedAny = true;
+                                }
+                            }
+                            if (addedAny && !firstFired && onFirstStream) {
+                                firstFired = true;
+                                onFirstStream(collected.slice());
                             }
                         }
                         finishOne();
-                    }, 12000);
+                    }, 6000);
+                    activeReqs.push(req);
                 });
             })(targets[t]);
         }
+
+        return {
+            abort: function () {
+                aborted = true;
+                for (var r = 0; r < activeReqs.length; r++) {
+                    try { activeReqs[r].abort(); } catch (e) {}
+                }
+                activeReqs = [];
+            }
+        };
     }
 
     NL.addonClient = {

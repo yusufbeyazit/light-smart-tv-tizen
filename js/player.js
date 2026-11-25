@@ -16,6 +16,7 @@
     var retryCount = 0;
     var zapTimer = null;
     var retryTimer = null;
+    var activeResolveReq = null;
     var aspectMode = 'letterbox';
     var listeners = [];
     var audioTracks = [];
@@ -96,6 +97,10 @@
         if (zapTimer) { clearTimeout(zapTimer); zapTimer = null; }
         if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
         if (seekDebounceTimer) { clearTimeout(seekDebounceTimer); seekDebounceTimer = null; }
+        if (activeResolveReq) {
+            try { activeResolveReq.abort(); } catch (e) {}
+            activeResolveReq = null;
+        }
         pendingSeekDeltaMs = 0;
     }
 
@@ -143,9 +148,10 @@
         return next;
     }
 
-    function playChannel(channel, streamIndex) {
+    function playChannel(channel, streamIndex, options) {
         if (!channel) return;
         clearTimers();
+        var opts = options || {};
         currentChannel = channel;
         currentStreams = (channel.streams || []).slice();
         currentStreamIdx = streamIndex || 0;
@@ -154,27 +160,59 @@
         NL.store.recordRecent(channel.id);
         setState('loading', 'Kanala baglaniliyor...');
 
-        // Debounce rapid CH+/CH- zapping so Tizen 3.0 decoder stays rock-solid
-        zapTimer = setTimeout(function () {
-            zapTimer = null;
-            // If channel comes from a Nuvio addon and streams aren't resolved yet, resolve now
+        function beginLaunch() {
+            // Free hardware decoder immediately so it tears down in parallel with any addon fetch
+            stopHardware();
+
+            // If channel comes from a Nuvio addon and streams aren't resolved yet,
+            // start playback on the VERY FIRST stream returned without waiting for slow addons!
             if (channel.sourceType === 'addon' && currentStreams.length === 0) {
-                setState('loading', 'Nuvio eklenti yayinlari aranıyor...');
-                NL.addonClient.resolveChannelStreams(channel, NL.store.getAllAddons(), function (err, resolved) {
-                    if (currentChannel !== channel) return;
-                    if (resolved && resolved.length > 0) {
-                        channel.streams = resolved.slice();
-                        currentStreams = resolved.slice();
+                setState('loading', 'Yayin bulunuyor...');
+                var startedPlayback = false;
+                activeResolveReq = NL.addonClient.resolveChannelStreams(
+                    channel,
+                    NL.store.getAllAddons(),
+                    function onAllDone(err, allResolved) {
+                        activeResolveReq = null;
+                        if (currentChannel !== channel) return;
+                        if (allResolved && allResolved.length > 0) {
+                            channel.streams = allResolved.slice();
+                            currentStreams = allResolved.slice();
+                            if (!startedPlayback) {
+                                startedPlayback = true;
+                                currentStreamIdx = Math.min(currentStreamIdx, currentStreams.length - 1);
+                                openCurrentStream(true);
+                            } else {
+                                // Silently refresh OSD stream count with newly arrived backup streams
+                                setState(playState, '');
+                            }
+                        } else if (!startedPlayback) {
+                            setState('error', 'Bu kanal icin aktif yayin bulunamadi');
+                        }
+                    },
+                    function onFirstStream(firstBatch) {
+                        if (currentChannel !== channel || startedPlayback) return;
+                        startedPlayback = true;
+                        channel.streams = firstBatch.slice();
+                        currentStreams = firstBatch.slice();
                         currentStreamIdx = Math.min(currentStreamIdx, currentStreams.length - 1);
-                        openCurrentStream();
-                    } else {
-                        setState('error', 'Bu kanal icin aktif yayin bulunamadi');
+                        openCurrentStream(true);
                     }
-                });
+                );
             } else {
-                openCurrentStream();
+                openCurrentStream(true);
             }
-        }, NL.CONFIG.ZAP_DEBOUNCE_MS);
+        }
+
+        // Only debounce rapid CH+/CH- zapping; direct clicks start with 0ms delay!
+        if (opts.debounce) {
+            zapTimer = setTimeout(function () {
+                zapTimer = null;
+                beginLaunch();
+            }, NL.CONFIG.ZAP_DEBOUNCE_MS);
+        } else {
+            beginLaunch();
+        }
     }
 
     function switchStream(index) {
@@ -182,17 +220,19 @@
         clearTimers();
         currentStreamIdx = index;
         retryCount = 0;
-        openCurrentStream();
+        openCurrentStream(false);
     }
 
-    function openCurrentStream() {
+    function openCurrentStream(alreadyStopped) {
         var st = currentStreams[currentStreamIdx];
         if (!st || !st.url) {
             setState('error', 'Gecerli yayin baglantisi yok');
             return;
         }
         setState('loading', (st.source || 'Yayin') + ' baglaniliyor...');
-        stopHardware();
+        if (!alreadyStopped) {
+            stopHardware();
+        }
 
         if (useAvPlay) {
             openWithAvPlay(st);
@@ -213,6 +253,14 @@
                 avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', NL.CONFIG.AVPLAY_BUFFER_PLAY_SEC);
                 avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', NL.CONFIG.AVPLAY_BUFFER_RESUME_SEC);
             } catch (bErr) {}
+
+            // For adaptive HLS (.m3u8), start on lowest rendition for fastest time-to-first-frame;
+            // Tizen ABR automatically upgrades to full HD within seconds.
+            if (stream.url && stream.url.toLowerCase().indexOf('.m3u8') !== -1) {
+                try {
+                    avplay.setStreamingProperty('ADAPTIVE_INFO', 'STARTBITRATE=LOWEST');
+                } catch (abrErr) {}
+            }
 
             // Apply custom headers (User-Agent / Referer) if provided by M3U or Nuvio Addon
             if (stream.headers) {
@@ -262,10 +310,10 @@
 
             avplay.prepareAsync(function () {
                 try {
-                    refreshAvPlayTracks();
                     avplay.play();
                     retryCount = 0;
                     setState('playing', '');
+                    setTimeout(refreshAvPlayTracks, 120);
                 } catch (playErr) {
                     handleStreamFailure('Oynatma baslatilamadi');
                 }
@@ -296,18 +344,18 @@
 
     function handleStreamFailure(reason) {
         if (!currentChannel) return;
-        // If there is another stream source on this channel, automatically failover!
+        // If there is another stream source on this channel, automatically failover fast!
         if (currentStreams.length > 1 && retryCount === 0 && (currentStreamIdx + 1) < currentStreams.length) {
             currentStreamIdx++;
             setState('loading', 'Yedek yayina geciliyor (' + (currentStreamIdx + 1) + '/' + currentStreams.length + ')...');
-            retryTimer = setTimeout(openCurrentStream, 900);
+            retryTimer = setTimeout(function () { openCurrentStream(false); }, 350);
             return;
         }
         // Otherwise retry up to MAX_RETRIES on Tizen
         if (useAvPlay && retryCount < NL.CONFIG.STREAM_MAX_RETRIES) {
             retryCount++;
             setState('buffering', 'Yeniden baglaniliyor (' + retryCount + '/' + NL.CONFIG.STREAM_MAX_RETRIES + ')...');
-            retryTimer = setTimeout(openCurrentStream, NL.CONFIG.STREAM_RECONNECT_DELAY_MS);
+            retryTimer = setTimeout(function () { openCurrentStream(false); }, NL.CONFIG.STREAM_RECONNECT_DELAY_MS);
             return;
         }
         setState('error', reason || 'Yayin acilamadi');
